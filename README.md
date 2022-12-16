@@ -37,7 +37,7 @@ python --version
 1. Clone the repository using the following command (one may use the SSH link as well) and navigate inside the directory:
 ```bash
 git clone https://github.com/aayan636/semantic-analysis-python.git
-cd python-analysis
+cd semantic-analysis-python
 ```
 2. Run the following to install dependencies:
 ```bash
