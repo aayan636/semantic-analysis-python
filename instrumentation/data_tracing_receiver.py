@@ -24,6 +24,15 @@ from .memory_graph_generator import *
 
 from .helper import printDebug
 
+############################################################################
+# `arg` contains the concrete result of the comparision which was just 
+# performed. If we find out that the comparision was false, we return
+# the negation of the established fact.
+# Example: suppose the expression compared was a < b
+# Suppose the result is false
+# In this case, we know that a >= b, and if the comparision was a >= b, it
+# would have returned true
+############################################################################
 def negCompare(arg):
   negList = {
     Compare.EQ: Compare.NE,
@@ -40,7 +49,12 @@ def negCompare(arg):
   else:
     raise NotImplementedError("Unknown Compare Op")
   
-
+############################################################################
+# When a function call is made, we store whether the symbolic return value 
+# would be stored on the stack or not (in case the called function cannot
+# be instrumented, it's symbolic value would not be on the stack after we
+# return to a instrumented frame.
+############################################################################
 class FunctionCallHandled(object):
   return_on_stack: bool
   arg_mapping: Dict[str, Union[StackElement, List[StackElement]]]
@@ -53,26 +67,57 @@ class FunctionCallHandled(object):
 
 
 class DataTracingReceiver(EventReceiver):
+  # List of instrumented function call frames which are currently on the compute stack.
   function_call_stack: List[Any]
+  # Store of objects assigned on the heap.
   heap_object_tracking: HeapObjectTracker
+  # Store of function call frame objects.
   frame_tracking: HeapObjectTracker
+  # Deprecated.
   cell_to_frame: Dict[Union[int, str, ObjectId], int]
+  # Tracks whether another event is already being handled.
   already_in_receiver: bool = False
+  # Stack of Symbolic Values, which is a symbolic execution counterpart to the concrete execution stack
   symbolic_stack: List[StackElement]
+  # Map of function call frames which maps to the corresponding Symbolic Value
   frame_variables: Dict[Union[FrameType, int], Dict[str, Union[SymbolicElement, List[StackElement]]]]
+  # Map of function call frames to Symbolic value of a cell variable in the said frame 
+  # Cell variables are variables which can be accessed by an inner scope, like a nested function
+  # These variables are encountered in list comprehensions, lambdas, etc
   cell_variables: Dict[Union[FrameType, int], Dict[str, SymbolicElement]]
+  # Map of function call frames to Symbolic value of a free variable in the said frame 
+  # Free variables are variables which are defined in a outer scope, like the parent of a nested function
+  # These variables are encountered in list comprehensions, lambdas, etc
   free_variables: Dict[Union[FrameType, int], Dict[str, SymbolicElement]]
+  # Map of a frame variable to closure cell (closures are created when a inner function is associated)
+  # with its free variables
   closure_cells: Dict[Union[FrameType, int], Dict[str, SymbolicElement]]
+  # Map of heap values of closure elements to their corresponding symbolic elements.
+  # This map is used to trace the symbolic values when executing inside the scope of a nested function
   closure_heap_to_symb: Dict[HeapElement, Tuple[SymbolicElement, str]]
+  # Corresponds to the block stack of the execution stack. This is currently not used
   block_stack: Dict[Union[FrameType, int], List[int]]
+  # Map from variable name to Symbolic Value of any global variable. Similar to frame_variables, but for
+  # global variables
   global_variables: Dict[str, SymbolicElement]
+  # When a Binary_Op is called, the symbolic input variables are popped from symbolic_stack and pushed onto 
+  # pre_op_stack. After the operation is completed, the pre_op_stack is popped to trace dependencies between
+  # the symbolic operands and the symbolic result
   pre_op_stack: List[Union[FunctionCallHandled, Tuple[StackElement, StackElement], Tuple[StackElement, StackElement, StackElement]]]
+  # Stack of the concrete function call elements
   frame_stack: List[FrameType]
+  # Used to disambiguate states when a for loop is in iteration, vs when the loop ends and the 
+  # symbolic value of the loop generator needs to be popped off
   pre_instrument_state_for_iter: bool = False
+  # Used for debugging, time taken in the symbolic operations
   timetaken: List[float]
+  # Used to trace if the symbolic object on top of stack actually corresponds to a method or a module
   set_methods: Set[HeapElement]
+  # Keep track of first frame
   first_frame: Optional[FrameType]
+  # Keep track of the operation executed in the previous execution of the Main event handler
   prev_op: str
+  # Whether to track comparisions or not
   trace_comparisions: bool = True
 
   def reset_receiver(self) -> None:
@@ -119,6 +164,10 @@ class DataTracingReceiver(EventReceiver):
     self.trace_comparisions = True
     set_current_heap_object_tracker(self.heap_object_tracking)
     super().__init__()
+
+  ############################################################################
+  # The following are a set of helper methods used by the main event handler
+  ############################################################################
 
   def set_trace_comparisions(self, trace):
     self.trace_comparisions = trace
@@ -245,9 +294,7 @@ class DataTracingReceiver(EventReceiver):
         for name, value in self.pre_op_stack[-1].arg_mapping.items():
           if isinstance(value, StackElement):
             self.frame_variables[cur_frame][name] = SymbolicElement("\'\'\'%s|%s"%("frame%d"%frameId,name), value)
-            #self.frame_variables[cur_frame][name] = StackElementVersion(StackElementFactory.getStackElement(value.fetch().concrete, opcode))
             add_dependency(frameId, self.frame_variables[cur_frame][name], value)
-            #add_dependency_not_on_stack(self.frame_variables[cur_frame][name], value)
           else:
             # We currently set the frame variable to the raw value, when we encounter a LOAD_* instruction
             # we will have access to the list object and can lazily set the required metadata
@@ -349,6 +396,8 @@ class DataTracingReceiver(EventReceiver):
         # TODO: Uninstrumentable function dependencies where None is returned:
         if function_object == list.append:
           assert len(symbolic_stack_args) == 2, "Unexpected number of function call parameters" #self and object to append
+          # When list append is called, we need to trace dependency between the symbolic value of the value to be
+          # appended and also the symbolic value of the collection element after the append is completed.
           mainList = symbolic_stack_args[0]
           toAppend = symbolic_stack_args[1]
           mainList.heap_elem.collection_counter += 1
@@ -358,6 +407,7 @@ class DataTracingReceiver(EventReceiver):
           mainList.heap_elem.collection_heap_elems.append(toAppendSymbolic)
           add_dependency(frameId, toAppendSymbolic, toAppend)
         elif function_object == list.pop:
+          # Here we simply need to pop off the symbolic element of the collection corresponding to the popped value
           mainList = symbolic_stack_args[0]
           mainList.heap_elem.collection_counter -= 1
           mainList.heap_elem.collection_heap_elems.pop()
@@ -387,19 +437,6 @@ class DataTracingReceiver(EventReceiver):
             #StackElementVersion(StackElementFactory.getStackElement(function_ret_stack[0], opcode))
             self.symbolic_stack.append(return_value_stack_el)
           
-
-
-        # TODO: Add Dependencie?
-        # if not(stack[0] is None):
-        #   add_dependency(return_value_stack_el, )
-
-        # if not return_on_stack:
-        #   assert False, "The un-instrumentable function decides the dependencies here, need to handle on per-function basis"
-        #   self.symbolic_stack.append(StackElement(
-        #     function_args_id_stack[0],
-        #     opcode,
-        #     [] # TODO(shadaj): add approximate dependencies
-        #   ))
     elif opname[opcode] == "RETURN_VALUE":
       self.frame_stack.pop()
       # If the first instrumented frame returns, it means the value on stack corresponds to the output of the entire program
@@ -758,7 +795,7 @@ class DataTracingReceiver(EventReceiver):
               add_dependency2(frameId, stackEl, cur_inputs[0], cur_inputs[1], binary_ops[opname[opcode]], arg if stackEl.heap_elem.object_id else negCompare(arg))
             else:
               add_dependency2(frameId, stackEl, cur_inputs[0], cur_inputs[1], binary_ops[opname[opcode]])
-            #   add_relation(stackEl.heap_elem.object_id, cur_inputs[1], cur_inputs[0], str(arg))
+
           
       elif opname[opcode] in unary_ops:
         if not is_post:
@@ -768,7 +805,6 @@ class DataTracingReceiver(EventReceiver):
           cur_inputs = self.pre_op_stack.pop()
           stackEl = StackElement(object_id_stack[0])
           self.symbolic_stack.append(stackEl)
-          #TODO: WHAT ABOUT UNARY_POSITIVE
           add_dependency1(frameId, stackEl, cur_inputs[0], unary_ops[opname[opcode]])
       elif opname[opcode] == "MAKE_FUNCTION":
         if not is_post:
@@ -806,6 +842,12 @@ class DataTracingReceiver(EventReceiver):
         self.check_symbolic_stack(object_id_stack, opcode)
     self.already_in_receiver = False
     self.prev_op = opname[opcode] if opcode != "JUMP_TARGET" else self.prev_op 
+
+  ############################################################################
+  # This function ensures that the symbolic stack and the concrete stack are
+  # Always in agreement (the concrete value of the symbolic stack must 
+  # always point to the same concrete object as on the concrete stack)
+  ############################################################################
 
   def check_symbolic_stack(self, object_id_stack: List[Any], opcode: int) -> None:
     

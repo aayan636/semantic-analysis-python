@@ -19,7 +19,14 @@ def getHeapElement(concrete: Any, heap_object_tracker: HeapObjectTracker, nameSt
     object_id_to_heap_element_map[key] = HeapElement(concrete, heap_object_tracker, nameStr)
   return object_id_to_heap_element_map[key]
 
-
+############################################################################
+# HeapElement tracks a object which is assigned on the heap. This can be
+# practically any Python object which is not a primitive (int/str)
+# It contains the symbolic object ID, some metadata as well as the 
+# symbolic elements of the collection elements if any (for example, a list
+# has several collection elements, `collection_heap_elems` would be a list
+# of Symbolic Values of all the collection elements.
+############################################################################
 class HeapElement(object):
   object_id: Union[ObjectId, int, str]
   collection_heap_elems: Union[SymbolicElement, List[SymbolicElement], Dict[SymbolicElement, SymbolicElement]]
@@ -76,6 +83,11 @@ class HeapElement(object):
   def __eq__(self, other) -> bool:
       return self.object_id.__eq__(other.object_id)
 
+
+############################################################################
+# SymbolicElement corresponds to the Symbolic Value of any python object 
+# which is currently NOT on the computation stack.
+############################################################################
 class SymbolicElement(object):
   var_name: str
   heap_elem: HeapElement
@@ -112,6 +124,13 @@ class SymbolicElement(object):
 
 stackElementCount = 0
 
+############################################################################
+# StackElement corresponds to the Symbolic Value of any python object 
+# which is currently PRESENT on the computation stack. SymbolicElement and 
+# StackElement are disambiguated to distinguish between temporary variables
+# and variables which have a name assigned to them (in memory, not just on 
+# the computation stack)
+############################################################################
 class StackElement(object):
   heap_elem: HeapElement
   version: int

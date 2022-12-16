@@ -12,6 +12,15 @@ from typing_extensions import Literal
 
 _Path = Union[bytes, str]
 
+############################################################################
+# This file contains the logic which makes the instrumentation possible.
+# The two classes here essentially intercept the Python module loader.
+# If there is a new module being imported, this loader first takes in the
+# source code and instruments the code according to our instrumentation 
+# logic. After that it simply calls the instrumented code while modifying
+# the namespace of the executed code to contain our event handlers.
+############################################################################
+
 class PatchingLoader(Loader):
   name: str
   existing_loader: Loader

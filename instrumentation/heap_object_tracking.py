@@ -1,5 +1,11 @@
 from typing import Any, Dict
 
+############################################################################
+# HeapObjectTracker keeps a track of all python objects which have been 
+# instantiated BY THE USER CODE. Only non-primitives are handled, primitives
+# like int, str are handled separately as they are subject to interning by
+# the Python interpreter.
+############################################################################
 class HeapObjectTracker(object):
   objects_to_id: Dict[Any, int]
   id_to_objects: Dict[int, Any]

@@ -4,6 +4,10 @@ import inspect
 from types import CodeType, FrameType
 from typing import Any
 
+############################################################################
+# Utility functions which are used during the instrumentation phase.
+############################################################################
+
 # newtype to track object IDs
 class ObjectId(object):
   def __init__(self, id: int) -> None:

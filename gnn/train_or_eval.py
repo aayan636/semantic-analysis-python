@@ -186,9 +186,6 @@ def train(data_path, batch_size,
   # Transform impure `net_fn` to pure functions with hk.transform.
   net = hk.without_apply_rng(hk.transform(net_fn))
   # Get a candidate graph and label to initialize the network.
-  # REMOVED
-  #graph, _ = reader.get_graph_by_idx(0)
-  # /REMOVED
   graph, label = get_graph()
 
   num_training_steps = num_training_samples * num_epochs // batch_size
@@ -219,9 +216,6 @@ def train(data_path, batch_size,
 
   try:
     for idx in range(num_training_steps):
-      # REMOVED
-      #graph, label = next(reader)
-      # /REMOVED
       graph, label = get_graph()
 
       # Jax will re-jit your graphnet every time a new graph shape is encountered.

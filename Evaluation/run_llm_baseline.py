@@ -10,13 +10,24 @@ flags.DEFINE_enum('dataset', None, ['1', '2', '3'], 'Which dataset to evaluate o
 flags.mark_flags_as_required(['model', 'dataset'])
 FLAGS = flags.FLAGS
 
-
+############################################################################
+# This function fetches one code snippet from either 
+# `Datasets/Wild-baseline-1` or `Datasets/Wild-baseline-2`
+# or `Datasets/Wild-baseline-3` as defined through FLAGS.dataset, 
+# assembles the whole prompt and queries the desired LLM 
+# (`code-cushman-001` or `code-davinci-002` as chosen in FLAGS.model)
+# to get it's recommended NumPy API.
+############################################################################
 def main(_):
   global FLAGS
 
   filedir = os.path.dirname(os.path.realpath(__file__))
   os.chdir(filedir)
+  # Be sure to generate a OpenAI API Key before running this file.
   openai.api_key = os.getenv("OPENAI_API_KEY")
+  if not openai.api_key:
+    print("Error: please set the environment variable OPENAI_API_KEY before running baselines")
+    return
   path = os.path.join('Datasets', 'Wild-baseline-' + FLAGS.dataset)
   model =  FLAGS.model
   files = [i for i in os.listdir(os.path.join(path)) if i[-3:] == ".py" and i != "test.py"]
@@ -36,6 +47,8 @@ def main(_):
     file_content = fp.readlines()
     file_content = ''.join(file_content)
 
+    # The prompt to make the LLM return a NumPy API which is semantically 
+    # closest to the provided code snippet.
     question = """
       
     #Recommend a NumPy API which is equivalent to func.
@@ -47,6 +60,7 @@ def main(_):
     print_response = True
     while retry:
       try:
+        # Creating the request using the API provided by OpenAI
         response = openai.Completion.create(
           model=model,
           prompt=prompt,
@@ -75,6 +89,10 @@ def main(_):
     if print_response:
       print("API ", i, ":")
       print(label)
+      # Evaluating each of the Top-3 predictions. 
+      # If the first prediction is correct, all of the top-3 
+      # predictions are considered correct, if the second prediction is correct, only
+      # top-2 and top-3 predictions are considered correct and so on.
       guess1 = response["choices"][0]["text"]
       guess2 = response["choices"][1]["text"]
       guess3 = response["choices"][2]["text"]

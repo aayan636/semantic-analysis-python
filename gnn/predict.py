@@ -13,6 +13,18 @@ num_classes = 46
 enable_jit = False
 hidden_dim = 512
 
+############################################################################
+# This file contains the implementation of the Graph Convolutional Network
+# which is used for prediction. This file contains the `evaluate` method 
+# which is called by the `predict()` methods in `run_custom.py`, 
+# `Evaluation/run_instrumented_wild.py`, `Evaluation/run_llm_baseline.py`.
+# This file is not used by the training procedure `gnn/train_or_eval.py` or
+# the experiments on scaling across input size.
+############################################################################
+
+############################################################################
+# The function for updating the hidden state of each edge
+############################################################################
 def edge_update_fn(edges: jnp.ndarray, sent: jnp.ndarray, receive: jnp.ndarray, glob: jnp.ndarray) -> jnp.ndarray:
   """Edge update function for graph net."""
   net = hk.Sequential(
@@ -20,7 +32,9 @@ def edge_update_fn(edges: jnp.ndarray, sent: jnp.ndarray, receive: jnp.ndarray, 
        hk.Linear(hidden_dim)])
   return net(jnp.concatenate([edges, sent, receive, glob], axis=1))
 
-
+############################################################################
+# The function for updating the hidden state of each node
+############################################################################
 def node_update_fn(nodes: jnp.ndarray, sent: jnp.ndarray, receive: jnp.ndarray, glob: jnp.ndarray) -> jnp.ndarray:
   """Node update function for graph net."""
   net = hk.Sequential(
@@ -28,7 +42,9 @@ def node_update_fn(nodes: jnp.ndarray, sent: jnp.ndarray, receive: jnp.ndarray, 
        hk.Linear(hidden_dim)])
   return net(jnp.concatenate([nodes, sent, receive, glob], axis=1))
 
-
+############################################################################
+# The function for updating the hidden state of the graph global hidden state
+############################################################################
 def update_global_fn(nodes: jnp.ndarray, edges: jnp.ndarray, glob: jnp.ndarray) -> jnp.ndarray:
   """Global update function for graph net."""
   global num_classes
@@ -38,7 +54,10 @@ def update_global_fn(nodes: jnp.ndarray, edges: jnp.ndarray, glob: jnp.ndarray) 
        hk.Linear(num_classes)])
   return net(jnp.concatenate([nodes, edges, glob], axis=1))
 
-
+############################################################################
+# The function for performing one step of message passing on the graph which
+# combines all 3 functions above.
+############################################################################
 def net_fn(graph: jraph.GraphsTuple) -> jraph.GraphsTuple:
   """Graph net function."""
   global num_classes
@@ -55,7 +74,13 @@ def net_fn(graph: jraph.GraphsTuple) -> jraph.GraphsTuple:
   )
   return net(embedder(graph))
 
-
+############################################################################
+# Each graph during inference is padded to the next higher power of 2 as is
+# required by the JAX framework. For each different graph size during 
+# inference, a new executable has to be jitted. This padding process helps
+# amortize the cost of compilation, else inference and training would take
+# a very long time.
+############################################################################
 def _nearest_bigger_power_of_two(x: int) -> int:
   """Computes the nearest power of two greater than x for padding."""
   y = 2
@@ -76,6 +101,9 @@ def pad_graph_to_nearest_power_of_two(
   return jraph.pad_with_graphs(graphs_tuple, pad_nodes_to, pad_edges_to,
                                pad_graphs_to)
 
+############################################################################
+# Computing the loss of the prediction
+############################################################################
 def compute_loss(params, graph, label, net):
   """Computes loss."""
   global num_classes
@@ -86,7 +114,12 @@ def compute_loss(params, graph, label, net):
   label_pos = num_classes - jnp.where(jnp.argsort(preds, axis=1)[0] == label[0])[0]
   return jnp.argmax(preds, axis=1)[0], jnp.max(raw_preds, axis=1)[0], label_pos
 
-
+############################################################################
+# This function is called by the `predict` methods mentioned above, and acts
+# as the inferace to all other functions in this file. It returns the 
+# prediction (class with highest probability score), the probability of the
+# predicted class, as well as the rank of the grouth truth class.
+############################################################################
 def evaluate(nodes, edges, index):
   """Evaluation Script."""
   filedir = os.path.dirname(os.path.realpath(__file__))
@@ -115,6 +148,10 @@ def evaluate(nodes, edges, index):
   prediction, confidence, label_pos = compute_loss_fn(params, graph, label)
   return prediction.item(), confidence.item(), label_pos.item()
 
+############################################################################
+# These functions are some basic tensor manipulations required to ensure the
+# dataset tensors are always in the shape as expected by the ML model.
+############################################################################
 def getnparray(raw):
     ret = np.atleast_2d(np.asarray(raw))
     if ret.size == 0:
@@ -129,6 +166,10 @@ def getnparray2(raw):
     else:
         return ret
 
+############################################################################
+# This function transforms a graph into a form understandable by JAX for 
+# inference.
+############################################################################
 def get_graph_test(nodes, edges, index):
     graphs = []
     labels = []
@@ -139,6 +180,11 @@ def get_graph_test(nodes, edges, index):
         label = np.asarray([index[i+1][2]])
         curGraphNodes = nodes[sln]
         curGraphEdges = edges[sle]
+        # Some tensor manipulation to make the data compatible with the format
+        # expected by the JRAPH library. The edge connectivity data is modified
+        # into the variables `all_receivers` and `all_senders`, while other
+        # features are kept as they are (features containing IDs are removed 
+        # for edges and nodes)
         all_nodes = curGraphNodes[:,2:].astype('float64')
         all_edges = curGraphEdges[:,3:].astype('float64')
         all_senders = np.atleast_1d(curGraphEdges.astype('int64')[:,0].squeeze())
@@ -150,11 +196,14 @@ def get_graph_test(nodes, edges, index):
                 red_edges.append(edge)
                 red_sender.append(sender)
                 red_receiver.append(receiver)
+        # Edge case tensor manipulations to ensure compatibilty with degenrate tensors
+        # (example graphs with no edges)
         red_edges = getnparray(red_edges)
         red_sender = getnparray2(red_sender)
         red_receiver = getnparray2(red_receiver)
         n_node = np.array([red_nodes.shape[0]]).astype('int64')
         n_edge = np.array([red_edges.shape[0]]).astype('int64')
+        # Creating the object which can be processed by the JRAPH library
         gr = jraph.GraphsTuple(
             nodes = red_nodes,
             edges = red_edges,

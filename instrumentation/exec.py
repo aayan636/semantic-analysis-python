@@ -4,6 +4,15 @@ from .event_receiver import call_all_receivers
 from typing import Any, List, Union
 from typing_extensions import Literal
 
+############################################################################
+# This function executes a given instrumented function by setting the 
+# `py_instrument_receiver` as the function `call_all_receivers`. That means
+# Whenever the instrumented code encounters a call to the function
+# `py_instrument_receiver`, the interpreter would call `call_all_receivers`
+# with the appropriate arguemtns.
+# This function is currently not in use, please go to module_loader.py
+############################################################################
+
 def exec_instrumented(source: str) -> None:
   root_codeobject = compile(source, "<string>", "exec")
   id_to_bytecode, code_to_id = extract_all_codeobjects(root_codeobject)

@@ -20,10 +20,34 @@ flags.mark_flags_as_required(['length', 'repeats'])
 FLAGS = flags.FLAGS
 
 patcher = PatchingPathFinder()
-patcher.install()
+############################################################################
+# After patcher.install() is called, all subsequently imported libraries  
+# would be instrumented to collect the dynamic dataflow and control flow
+# dependency information to which would enable the DataTracingReceiver()
+# below to construct the execution graph.
+############################################################################
+patcher.install() 
 
 receiver = DataTracingReceiver()
 
+############################################################################
+# This file contains input generators which would generate inputs for 
+# executing codes in the Datasets/Wild folder. This dataset contains code
+# which is used for testing the performance of our framework on code 
+# snippets which were not observed during the training process and hence
+# tests how well the generated graphs generalize to different 
+# implementations, not just the ones seen during training.
+############################################################################
+
+
+############################################################################
+# As an example, consider the generator function `testWildImplSum` below.
+# We generate a random input (variable `a`) which is then fed into the 
+# function under test `totest.func1`. Executing the function within the 
+# context manager `receiver` results in the creation of the graph from the
+# program execution, which is stored within the `receiver` variable, and 
+# is processed by the `predict` function below.
+############################################################################
 def testWildImplSum(length):
   import Datasets.Wild.sum as totest
   import numpy as np
@@ -530,24 +554,56 @@ def testWildImplUnique(length):
     ans = totest.func1(a)
   return "Unique"
 
+############################################################################
+# This function should be called after a generator `testWildImpl*` is 
+# invoked. `predict` extracts the graph and feeds it to the GNN for 
+# prediction.
+############################################################################
 def predict(grouth_truth):
   global receiver
   import numpy as np
+  #`predict` then proceeds to extract the graph from the `receiver`
+  # and captures the details in `allNodeDetails`, `allEdgeDetails` and 
+  # `nodeEdgeCounts`. Some tensor transformations are carried out to make 
+  # the data compatible with what the ML model expects
   (allNodeDetails, allEdgeDetails, nodeEdgeCounts), times = receiver.receiverData
+  # If multiple generators are called, the receiver 
+  # accumulates the data of all generated graphs, which should be cleaned up
+  # by calling `receiver.clear_cumulative_data()
   receiver.clear_cumulative_data()
+  # Some tensor reshaping to make the data compatible with what the GCN expects.
   def flatten(lol):
     return [i for l in lol for i in l]
   allNodeDetails = np.asarray(flatten(allNodeDetails))
   allEdgeDetails = np.reshape(np.asarray(flatten(allEdgeDetails)), (-1, 4))
+  # The GCN also expects the labels in order to compare the predicted label
+  # with the actual label, and evaluate the ranking of the actual label
   labels = [-1, ClassToIntMapping[grouth_truth]]
   nodeEdgeCounts = np.concatenate([np.asarray(nodeEdgeCounts), np.expand_dims(np.asarray(labels), axis=1)], axis=1)
+  # Calling patcher.uninstall() here so that `evaluate` does not get instrumented
+  # when it is invoked.
   patcher.uninstall()
+  # The evaluate function returns the predicted class, probability of the predicted
+  # class, as well as the rank of the grouth truth label (ideally the ground truth
+  # rank should be 0 or as close to 0 as possible.
   pred, conf, label_pos = evaluate(allNodeDetails, allEdgeDetails, nodeEdgeCounts)
   prediction = IntToClassMapping[pred]
+  # Calling patcher.install() here so that subsequent `testWildImpl*` calls 
+  # have their imported code snippets (code under test) instrumented.
   patcher.install()
   return prediction, conf, label_pos
 
+############################################################################
+# `main` below is a driver function which calls all of the input generators
+# defined above, which populates `receiver` with the execution graph. The
+# `main` function then calls `predict` which extracts the graph from 
+# `receiver` and feeds it to the ML model for prediction.
+############################################################################
 def main(_):
+  # globals() refers to all globally defined names, which includes all 
+  # function definitions above. By design, all generators are defined
+  # using the prefix `testWildImpl`, which gives us a way to obtain all
+  # generators which need to be executed.
   tests = [i for i in globals() if "testWildImpl" in i]
   count = 0
   correct = 0
@@ -555,6 +611,9 @@ def main(_):
   top3_correct = 0
   for rep in range(FLAGS.repeats):
       for i in tests:
+          # Few generators have special signatures which we define below.
+          # Generally, most generators require just one field: length
+          # which is the length of the input which has to be generated
           if "testWildImplArange" in i:
               start = 10
               stop = 26
@@ -589,4 +648,10 @@ def main(_):
 if __name__ == '__main__':
   app.run(main)
 
+
+############################################################################
+# After calling patcher.uninstall, any subsequently imported libraries would
+# not be instrumented, which would save on the execution time of libraries 
+# not under test.
+############################################################################
 patcher.uninstall()

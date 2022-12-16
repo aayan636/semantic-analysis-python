@@ -14,6 +14,12 @@ sys.path.append("/home/aayan/Desktop/Research")
 sys.path.append("/Users/aayan/Desktop/Research")
 
 patcher = PatchingPathFinder()
+############################################################################
+# After patcher.install() is called, all subsequently imported libraries  
+# would be instrumented to collect the dynamic dataflow and control flow
+# dependency information to which would enable the DataTracingReceiver()
+# below to construct the execution graph.
+############################################################################
 patcher.install()
 
 import random
@@ -23,6 +29,19 @@ receiver = DataTracingReceiver()
 lower = 10
 upper = 30
 
+############################################################################
+# This file contains input generators which would generate inputs for 
+# generating the `train`, `test` etc. datasets. This dataset contains code
+# which is used for generating graphs which is used for training the ML 
+# model used in our framework to actually process the generated execution 
+# graphs.
+############################################################################
+
+############################################################################
+# The functions below were implemented to test out a preliminary version of
+# the model. The functions used for training the predictor for the NumPy 
+# APIs are below the `NumPy APIs` heading.
+############################################################################
 def testInsertionSort():
   global lower, upper
   from demos.insertsort import insertion_sort
@@ -124,12 +143,25 @@ def testTrial():
     trial(a)
 
 
-####################################################################################################################################
-############################################ NUMPY APIs ############################################################################
-####################################################################################################################################
+############################################################################
+#                               NUMPY APIs                                 #
+############################################################################
 
-### HELPER
+############################################################################
+# The following are some helper methods which are used to create inputs
+# which explore different behaviors of the NumPy APIs. They are individually 
+# described as they come.
+############################################################################
 
+############################################################################
+# This function generates a shape which is broadcast compatible to the 
+# argument shapes `original1` and `original2`. This function assumes 
+# `original1` and `original2` themselves are broadcast compatible.
+# Broadcasting is a NumPy operation where one can perform element wise
+# computations of tensors of different shapes, as long as the shapes satisfy
+# certain conditions, enabling the NumPy kernel to repeat the tensors along
+# certain dimensions to ensure the resultant operands have some common shape.
+############################################################################
 def get_broadcast_compatible_shape_2(original1, original2, max_dim):
   import numpy as np
   or1 = list(original1)
@@ -176,6 +208,10 @@ def get_broadcast_compatible_shape_2(original1, original2, max_dim):
     new_shape.append(np.random.randint(1, max_dim + 1))
   return new_shape[::-1]
 
+############################################################################
+# This function generates a shape which is broadcast compatible to the 
+# argument shape original.
+############################################################################
 def get_broadcast_compatible_shape(original, max_dim):
   import numpy as np
   if np.random.randint(0, 2):
@@ -198,6 +234,11 @@ def get_broadcast_compatible_shape(original, max_dim):
     new_shape.append(np.random.randint(1, max_dim + 1))
   return new_shape[::-1]
 
+############################################################################
+# This function generates a shape which is broadcast compatible to the 
+# argument shape original, while also ensuring that the new shape results
+# in a smaller tensor than `original`.
+############################################################################
 def get_broadcast_compatible_shape_small(original, max_dim):
   import numpy as np
   if np.random.randint(0, 2):
@@ -215,6 +256,12 @@ def get_broadcast_compatible_shape_small(original, max_dim):
       return new_shape[::-1]
   return new_shape[::-1]
 
+############################################################################
+# This function generates 2 random tensors with have at max `dims` 
+# dimensions and each dimension can have at most `dim_size_max` elements.
+# Hence the maximum size tensor can be 
+# `dim_size_max * dim_size_max * dim_size_max`
+############################################################################
 def get_random_init(dims, dim_size_max):
   import numpy as np
   size_a = tuple([np.random.randint(1,dim_size_max+1) for i in range(np.random.randint(1, dims+1))])
@@ -223,6 +270,10 @@ def get_random_init(dims, dim_size_max):
   b = np.random.uniform(low=-10., high=10., size=size_b).tolist()
   return size_a, size_b, a, b
 
+############################################################################
+# This function generates two random tensors like `get_random_init`, while 
+# ensuring the shapes of the two tensors are broadcast compatible
+############################################################################
 def get_random_init_element_wise(dims, dim_size_max):
   import numpy as np
   size_a = tuple([np.random.randint(1,dim_size_max+1) for i in range(np.random.randint(1, dims+1))])
@@ -231,6 +282,14 @@ def get_random_init_element_wise(dims, dim_size_max):
   b = np.random.uniform(low=-10., high=10., size=size_b).tolist()
   return size_a, size_b, a, b
 
+############################################################################
+# This function generates 3 random tensors with have at max `dims` 
+# dimensions and each dimension can have at most `dim_size_max` elements.
+# Hence the maximum size tensor can be 
+# `dim_size_max * dim_size_max * dim_size_max`.
+# This function also ensures the shape of all 3 tensors are broadcast
+# compatible.
+############################################################################
 def get_random_init_element_wise_3(dims, dim_size_max):
   import numpy as np
   size_a = tuple([np.random.randint(1,dim_size_max+1) for i in range(np.random.randint(1, dims+1))])
@@ -241,6 +300,12 @@ def get_random_init_element_wise_3(dims, dim_size_max):
   c = np.random.uniform(low=-10., high=10., size=size_c).tolist()
   return size_a, size_b, size_c, a, b, c
 
+############################################################################
+# This function generates two random tensors like `get_random_init`, while 
+# ensuring the shapes of the two tensors are broadcast compatible. However
+# it also initializes parameters like `axis`, `keepdims` etc. which are
+# commonly used in functions which perform reductions (like sum, max etc.).
+############################################################################
 def get_random_init_reduction(dims, dim_size_max):
   import numpy as np
   size = tuple([np.random.randint(1,dim_size_max+1) for i in range(np.random.randint(1, dims+1))])
@@ -255,6 +320,14 @@ def get_random_init_reduction(dims, dim_size_max):
   where = np.random.choice([None, np.random.choice([True, False], p=[0.8, 0.2], size=size_where).tolist()])
   return size, size_where, a, axis, keepdims, initial, where
 
+############################################################################
+# This function generates two random tensors like `get_random_init`, while 
+# ensuring the shapes of the two tensors are broadcast compatible. However
+# it also initializes parameters like `axis`, `keepdims` etc. which are
+# commonly used in functions which perform reductions (like cumsum etc.).
+# It initializes `axis` differently and has a slightly different set of 
+# parameters from `get_random_init_reduction`.
+############################################################################
 def get_random_init_complex_reduction(dims, dim_size_max):
   import numpy as np
   size = tuple([np.random.randint(1,dim_size_max+1) for i in range(np.random.randint(1, dims+1))])
@@ -263,7 +336,9 @@ def get_random_init_complex_reduction(dims, dim_size_max):
   keepdims = np.random.choice([None, True])
   return size, a, axis, keepdims
 
-###### DATASET GENERATORS
+############################################################################
+#                            DATASET GENERATORS                            #
+############################################################################
 
 ### REDUCTION
 
@@ -745,10 +820,7 @@ def testAppend(dims, dim_size_max):
   size, arr, _, _ = get_random_init_complex_reduction(dims, dim_size_max)
   axis = np.random.choice(len(size))
   size_values = list(size)
-  # if axis is not None:
   size_values[axis] = 1 # Concatenated axis may be different in all operands
-  # else:
-  #   size_values = tuple([np.random.randint(1,dim_size_max+1) for i in range(np.random.randint(1, dims+1))])
   values = np.random.uniform(low=-10., high=10., size=size_values).tolist()
   print(arr, size)
   print(values, size_values)
@@ -912,7 +984,10 @@ def testTake(dims, dim_size_max):
     ans = take.take_1(a, i, axis)
   print("take: ", ans)
 
-
+############################################################################
+# Deprecated method used in earlier experiments using a dataset of only
+# sorting algorithms.
+############################################################################
 def generateDataset(mode, num_datapoints):
   global receiver
   labels = [-1]
@@ -953,7 +1028,10 @@ def generateDataset(mode, num_datapoints):
   receiver.clear_cumulative_data()
 
 
-
+############################################################################
+# The following is the driver function which is used to call the generators
+# for the NumPy API functions, which generates the dataset of graphs.
+############################################################################
 def generateDataset(mode, num_datapoints, instance_id):
   global receiver
   labels = [-1]
@@ -972,8 +1050,12 @@ def generateDataset(mode, num_datapoints, instance_id):
       return (4, 5)
   for i in range(num_datapoints):
     st = time()
+    # choose which API to create a graph for
     choice = random.randint(0,45)
     labels.append(choice)
+    # `trace` captures whether the path constraints are captured or not. For a general
+    # algorithm, path constraints may or may not be captured, but for some algorithms
+    # like max, min, sorting etc. path constraints are necessary.
     trace = np.random.choice([True, False])
     print("trace: ", trace)
     receiver.set_trace_comparisions(trace)
@@ -1088,17 +1170,16 @@ def generateDataset(mode, num_datapoints, instance_id):
     print(en-st)
     _, times = receiver.receiverData
     print(times)
+  # Capturing all the data from the receiver which contains data of all generated graphs
   (allNodeDetails, allEdgeDetails, nodeEdgeCounts), times = receiver.receiverData
   allNodeDetails = np.asarray(flatten(allNodeDetails))
   allEdgeDetails = np.asarray(flatten(allEdgeDetails))
   nodeEdgeCounts = np.concatenate([np.asarray(nodeEdgeCounts), np.expand_dims(np.asarray(labels), axis=1)], axis=1)
 
+  # Saving the dataset
   np.save("%s/%s/nodes%s.npy"%(mode, instance_id, mode), allNodeDetails)
   np.save("%s/%s/edges%s.npy"%(mode, instance_id, mode), allEdgeDetails)
   np.save("%s/%s/index%s.npy"%(mode, instance_id, mode), nodeEdgeCounts)
-  # np.save("/usr/local/lib/python3.9/site-packages/jraph/nodes%s.npy"%mode, allNodeDetails)
-  # np.save("/usr/local/lib/python3.9/site-packages/jraph/edges%s.npy"%mode, allEdgeDetails)
-  # np.save("/usr/local/lib/python3.9/site-packages/jraph/index%s.npy"%mode, nodeEdgeCounts)
   receiver.clear_cumulative_data()
 
 _, instance_id, num_graphs, mode = sys.argv
@@ -1108,45 +1189,19 @@ num_graphs = int(num_graphs)
 print(instance_id, mode.__hash__())
 random.seed(instance_id + mode.__hash__())
 
+############################################################################
+# Creating the directory to store the generated dataset if it does not 
+# already exist
+############################################################################
 if not os.path.exists("%s/%s"%(mode, instance_id)):
     os.makedirs("%s/%s"%(mode, instance_id))
 
 generateDataset(mode, num_graphs, instance_id)
 
-def predict():
-  global receiver
-  import numpy as np
-  (allNodeDetails, allEdgeDetails, nodeEdgeCounts), times = receiver.receiverData
-  def flatten(lol):
-    return [i for l in lol for i in l]
-  allNodeDetails = np.asarray(flatten(allNodeDetails))
-  allEdgeDetails = np.reshape(np.asarray(flatten(allEdgeDetails)), (-1, 4))
-  labels = [-1, -1]
-  nodeEdgeCounts = np.concatenate([np.asarray(nodeEdgeCounts), np.expand_dims(np.asarray(labels), axis=1)], axis=1)
-  patcher.uninstall()
-  print("GNN Predicts this as: ", IntToClassMapping[evaluate(allNodeDetails, allEdgeDetails, nodeEdgeCounts)])
-  patcher.install()
   
-
-# for i in range(1000):
-#   testReductionMax(2, 6)
-# import matplotlib.pyplot as plt
-# print("NJDKASBNIJ")
-# plt.hist([i[0] for i in shapes1 if len(i) == 1])
-# plt.show()
-# random.seed(92)
-
-# import time
-# st = time.time()
-# import numpy as np
-# for i in range(100):
-#   # testWildImpl()
-#   # testMergeSort()
-#   trace = np.random.choice([True, False])
-#   print("trace: ", trace)
-#   receiver.set_trace_comparisions(trace)
-#   testTake(3, 3)
-#   # predict()
-# en = time.time()
-# print(en - st)
+############################################################################
+# After calling patcher.uninstall, any subsequently imported libraries would
+# not be instrumented, which would save on the execution time of libraries 
+# not under test.
+############################################################################
 patcher.uninstall()

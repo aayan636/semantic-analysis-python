@@ -302,6 +302,16 @@ def is_input(nodeStr: str) -> bool:
   global inputs
   return nodeStr in inputs
 
+############################################################################
+# This function is called at the end of the execution of the user code
+# when the context manager exits (check out DataTracingReceiver::__exit__())
+# This function is responsible for accumulating all nodes, edges, clearing
+# out unnecessary nodes (check out the nested function cleanGraph()), 
+# and storing the node, edge information of this graph in a accumulator
+# (allNodeDetails, allEdgeDetails, nodeEdgeCounts), which is then returned
+# the outermost code in run_instrumented.py and contains the graph data
+# of all graphs that have been created in the current session.
+############################################################################
 def generate_memory_graph(trace_comparisions):
   global allObservedPositions, G, dependencyCount, variableToLatestVersion, generatedGraphs, object_id_to_heap_element_map, edgeMap, edgeCounter, inputs, outputs, inputMap, outputMap, num_inputs, num_outputs, edgesSum, nodesSum
   assert nx.is_directed_acyclic_graph(G)
@@ -321,8 +331,6 @@ def generate_memory_graph(trace_comparisions):
   for node in allNodes:
     if is_input_or_output(node):
       relevantNodes.append(node)
-    #if "nameless" in node: #and len([c for c in G.successors(node)]) == 0:
-    #  relevantNodes.append(node)
 
   visitedQueue = deque(relevantNodes)
   relevantNodes = set()
@@ -347,7 +355,13 @@ def generate_memory_graph(trace_comparisions):
 
   all_Nodes = list(reversed(list(nx.topological_sort(G))))
 
-  
+  ############################################################################
+  # Nested function to perform cleaning of graphs. At each stage, a simple 
+  # algorithm determines whether a node needs to be kept or removed.
+  # If a node is to be removed, all its parents are connected to all its
+  # children, and the node and all incident and emergent edges are removed
+  # from the graph.
+  ############################################################################
   def cleanGraph(stage):
     global edgeCounter
     nonlocal relevantNodes
@@ -469,8 +483,7 @@ def generate_memory_graph(trace_comparisions):
   for node in G.nodes:
     if is_input_or_output(node):
       relevantNodes.append(node)
-    #if "nameless" in node: #and len([c for c in G.successors(node)]) == 0:
-    #  relevantNodes.append(node)
+
 
   visitedQueue = deque(relevantNodes)
   relevantNodes = set()
@@ -549,10 +562,6 @@ def generate_memory_graph(trace_comparisions):
   default_i = i + 2
   opToId[None] = 0
 
-  # print(binary_ops)
-  # print(unary_ops)
-  # print(opToId)
-
   GsameVariableEdge = nx.get_edge_attributes(G,'sameVariableEdge')
   GfactEdge = {(u, v, k): d.get('fact',"") for u, v, k, d in G.edges(data=True, keys=True)}
   GfactContainingEdges = nx.get_edge_attributes(G, 'fact')
@@ -585,12 +594,7 @@ def generate_memory_graph(trace_comparisions):
     nodeToVector[i] = (first_three + (operation,) + consts)
     nodeDetails.append([nodeMap[i], -1] + list(nodeToVector[i]))
 
-  # for i, k in pos.items():
-  #   nodeMap[i] = nodeNumber
-  #   nodeNumber += 1
-  #   nodeDetails.append([nodeNumber, -1, np.sin((k[0] - low) / (high - low)), opToId.get(GnodeToOp[i], default_i)])
-    # nodeDetail = [nodeNumber, -1, I/O, -1, k[0]]
-    # nodeDetails.append()
+
   for e in G.edges:
     val = int(GfactEdge[e])+1 if isinstance(GfactEdge[e], Compare) else 0
     edgeDetails.append([nodeMap[e[0]], nodeMap[e[1]], -1, val])
@@ -615,12 +619,7 @@ def generate_memory_graph(trace_comparisions):
     ax = plt.gca()
     plt.axis('off')
 
-  # print(nx.get_edge_attributes(G,'isShadow'))
-  # plt.ion()
-  # plt.show()
-  # print(G.edges)
-  # print(G.nodes)
-  # print(pos)
+
   for e in G.edges:
     printDebug(e)
   drawnNodes = set()
@@ -628,66 +627,9 @@ def generate_memory_graph(trace_comparisions):
   if isShowPlot():
     plt.rcParams.update({'font.size': 5})
 
-  # fig = plt.figure()
-  # ax = fig.add_subplot(111)
-
-  # minX, maxX = 2**64, -2**64
-  # minY, maxY = 2**64, -2**64
-  # for _, (x, y) in pos.items():
-  #   minX = min(minX, x)
-  #   maxX = max(maxX, x)
-  #   minY = min(minY, y)
-  #   maxY = max(maxY, y)
-
-  # x, y = [], []
-  # line1, = ax.plot(x,y,'g*')
-
-  # ax.set_xlim([minX-10, maxX+10])
-  # ax.set_ylim([minY-1, maxY+1])
-
 
   for e in sorted(G.edges, key=lambda x: edgeMap[x]):
-  #   st = time()
-  #   plt.pause(0.005)
-  #   nodes = [e[0], e[1]]
-  #   for node in nodes:
-  #     if node not in drawnNodes:
-  #       x.append(pos[node][0])
-  #       y.append(pos[node][1])
-  #       drawnNodes.add(node)
-  #       line1.set_ydata(y)
-  #       line1.set_xdata(x)
-  #   if attributeGraph[e] == False:
-  #     x_, y_ = pos[e[0]]
-  #     xdx, ydy = pos[e[1]]
-  #     dx, dy = xdx - x_, ydy - y_
-  #     # ret = ax.arrow(x_, y_, dx, dy, animated=True)
-  #     # print(ret)
-  #     # input()
-  #     # ax.draw_artist(ret)
-  #   fig.canvas.draw()
-  #   fig.canvas.flush_events()
-  #   # input()
-  #   en = time()
-  #   # if attributeGraph[e] == False:
-      
-  #   # if attributeGraph[e] == False:      
-  #   #   ax.annotate("",
-  #   #       xy=pos[e[1]], xycoords='data',
-  #   #       xytext=pos[e[0]], textcoords='data',
-  #   #       arrowprops=dict(arrowstyle="->", color="0.1",
-  #   #               shrinkA=10, shrinkB=10,
-  #   #               patchA=None, patchB=None,
-  #   #               connectionstyle="arc3,rad=rrr".replace('rrr',str(0.3*e[2])
-  #   #               ),
-  #   #               ),
-  #   #       )
-  #   print(en - st)
-    # nodes = [e[0], e[1]]
-    # for node in nodes:
-    #   if node not in drawnNodes:
-    #     plt.plot([pos[node][0]], [pos[node][1]], marker='o', color='g', label=node)
-    #     drawnNodes.add(node)
+  
     if GsameVariableEdge[e] == False:    
       if isShowPlot():  
         ax.annotate("",
@@ -700,14 +642,6 @@ def generate_memory_graph(trace_comparisions):
                   ),
                   ),
           )
-        # labelLoc = ((pos[e[0]][0] + pos[e[1]][0]) / 2, (pos[e[0]][1] + pos[e[1]][1]) / 2)
-        # ax.annotate(GopEdge[e], xy = labelLoc, xycoords='data', xytext = labelLoc, textcoords='data', arrowprops=dict(arrowstyle="->", color="0.1",
-        #           shrinkA=10, shrinkB=10,
-        #           patchA=None, patchB=None,
-        #           connectionstyle="arc3,rad=rrr".replace('rrr',str(0.3*e[2])
-        #           ),
-        #           ),)
-
 
   
   printDebug(sorted(allObservedPositions))

@@ -10,7 +10,10 @@ from .util import ObjectId, get_instrumented_program_frame
 
 from typing import Any, Dict, List, Union, Optional
 from typing_extensions import Literal
-
+############################################################################
+# This class is not being used currently. It is a design on how another 
+# receiver could be designed.
+############################################################################
 class StackTrackingReceiver(EventReceiver):
   loop_stack: List[Any]
   function_call_stack: List[Any]
